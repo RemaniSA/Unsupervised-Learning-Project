@@ -1,3 +1,4 @@
+#TODO: Sort files by PCA and cluster rankings and save to csv
 #%%
 import os
 
@@ -8,20 +9,21 @@ import seaborn as sns
 from sklearn.cluster import KMeans
 from sklearn.discriminant_analysis import StandardScaler
 from sklearn.decomposition import PCA
-from sklearn.metrics import silhouette_score
+from sklearn.metrics import silhouette_score, adjusted_rand_score
 import scipy.cluster.hierarchy as sch
 from scipy.cluster.hierarchy import fcluster
 
-# Set global plot style
+# Set up plotting and saving configurations
 sns.set_style("whitegrid")
-plt.rcParams['figure.dpi'] = 100
+plt.rcParams['figure.dpi'] = 300
 SAVE_FIGURES = 1
 os.makedirs("./images", exist_ok=True)
 os.makedirs("./datasets", exist_ok=True)
 
 def maybe_savefig(filename):
     """
-    Save figures to an images directory if SAVE_FIGURES is True/1
+    Save figures to an images directory if SAVE_FIGURES is True/1.
+    Else, do not save figures.
 
     Args:
     filename (str): Name of the file to save the figure as
@@ -75,6 +77,12 @@ class DataProcessor:
         scaled_array = scaler.fit_transform(self.df)
         self.df = pd.DataFrame(scaled_array, columns=self.df.columns)
         return self.df
+
+    def get_aligned_original_data(self):
+        # Reload original dataset and align to filtered numeric data
+        original = pd.read_csv(self.file_path)
+        original.rename(columns={'Unnamed: 0': 'Ranking'}, inplace=True)
+        return original.loc[self.df.index].reset_index(drop=True)
 
 class EDASummary:
     """
@@ -176,6 +184,8 @@ class PCAProcessor:
     get_scores(): Get the principal component scores
     get_loadings(): Get the PCA loadings
     explained_variance(): Get the explained variance ratio
+    get_n_components_for_variance(threshold): Get number of components to reach specified variance threshold
+    get_aligned_original_data(): Reload original dataset and align to filtered numeric
     """
     def __init__(self, df, n_components=2):
         # Set up dataframe and PCA object
@@ -204,6 +214,18 @@ class PCAProcessor:
     def explained_variance(self):
         # Get explained variance ratio
         return self.pca.explained_variance_ratio_
+
+    def get_n_components_for_variance(self, threshold=0.95):
+        # Get number of components required to reach the specified cumulative explained variance
+        cum_var = np.cumsum(self.explained_variance())
+        return np.argmax(cum_var >= threshold) + 1
+    
+    def get_aligned_original_data(self):
+        # Reload original dataset and align to filtered numeric data
+        original = pd.read_csv(self.file_path)
+        original.rename(columns={'Unnamed: 0': 'Ranking'}, inplace=True)
+        return original.loc[self.df.index].reset_index(drop=True)
+
 
 class PCAVisualiser:
     """
@@ -456,7 +478,7 @@ if __name__ == "__main__":
     # We must remove Ranking column as it is highly correlated with rating
     df_std = df_std.drop(columns=['Ranking'])
 
-    # PCA
+    # PCA (full)
     pca_runner = PCAProcessor(df_std, n_components=df_std.shape[1])
     pc_df = pca_runner.get_scores()
     loadings = pca_runner.get_loadings(pc_df)
@@ -467,8 +489,16 @@ if __name__ == "__main__":
     pca_viz.display_cumulative_variance()
     pca_viz.display_biplot()
 
-    # KMeans Clustering
-    kmeans_proc = KMeansClusteringProcessor(df_std.values)
+    # Determine how many components explain 95% variance
+    n_components_95 = pca_runner.get_n_components_for_variance(threshold=0.95)
+    print(f"Number of components to explain 95% variance: {n_components_95}")
+
+    # Re-run PCA with reduced components
+    pca_runner_reduced = PCAProcessor(df_std, n_components=n_components_95)
+    reduced_pca_scores = pca_runner_reduced.get_scores().values
+
+    # KMeans Clustering on reduced PCA
+    kmeans_proc = KMeansClusteringProcessor(reduced_pca_scores)
     kmeans_proc.find_optimal_k()
     kmeans_labels = kmeans_proc.fit_final_model()
     df_std["KMeans Cluster"] = kmeans_labels
@@ -484,8 +514,26 @@ if __name__ == "__main__":
     print("\nKMeans Cluster Counts:")
     print(df_std["KMeans Cluster"].value_counts())
 
+    # Feature distributions by cluster
+    for col in df_std.columns.difference(["KMeans Cluster", "Hierarchical Cluster"]):
+        plt.figure(figsize=(8, 4))
+        sns.boxplot(data=df_std, x='KMeans Cluster', y=col)
+        plt.title(f'{col} by KMeans Cluster')
+        plt.tight_layout()
+        maybe_savefig(f"{col}_kmeans_cluster_boxplot.png")
+        plt.show()
+
+    # Cluster Stability Check
+    print("\nKMeans Cluster Stability Check:")
+    seeds = [0, 21, 42, 99]
+    for seed in seeds:
+        kmeans_alt = KMeans(n_clusters=kmeans_proc.optimal_k, random_state=seed)
+        alt_labels = kmeans_alt.fit_predict(reduced_pca_scores)
+        ari = adjusted_rand_score(kmeans_labels, alt_labels)
+        print(f"Adjusted Rand Index vs seed {seed}: {ari:.3f}")
+
     # Hierarchical Clustering
-    hier_proc = HierarchicalClusteringProcessor(df_std.values)
+    hier_proc = HierarchicalClusteringProcessor(reduced_pca_scores)
     hier_proc.compute_linkage()
     hier_labels = hier_proc.assign_clusters()
     df_std["Hierarchical Cluster"] = hier_labels
@@ -501,17 +549,35 @@ if __name__ == "__main__":
     print("\nHierarchical Cluster Counts:")
     print(df_std["Hierarchical Cluster"].value_counts())
 
-    # Save Results
+    # Save final datasets for further analysis
     print('Analysis Completed!')
-    print('Saving Clustering Results...')
+    print('Saving Final Results with Movie Titles...')
 
-    # Combine PCA with cluster labels and save results
-    pc_df["KMeans Cluster"] = kmeans_labels
-    pc_df["Hierarchical Cluster"] = hier_labels
-    pc_df.to_csv("./datasets/pca_clusters_combined.csv", index=False)
+    # Get aligned original metadata from DataProcessor
+    original_df = data_processor.get_aligned_original_data()
 
-    # Save Clustering Results
-    df_std.to_csv("./datasets/IMDB_Movies_Clustered.csv", index=False)
-    
-    print('Results Saved!')
+    # Safety checks
+    assert len(original_df) == len(df_std), "Row count mismatch after preprocessing!"
+    assert len(original_df) == len(pc_df), "Row count mismatch with PCA DataFrame!"
 
+    # Define final outputs
+    final_outputs = {
+        "./datasets/movies_clustered.csv": original_df.assign(
+            **{
+                "KMeans Cluster": df_std["KMeans Cluster"].values,
+                "Hierarchical Cluster": df_std["Hierarchical Cluster"].values,
+            }
+        ),
+        "./datasets/movies_pca.csv": original_df.join(pc_df)
+    }
+
+    # Save each output
+    for path, df in final_outputs.items():
+        df.to_csv(path, index=False)
+        print(f"Saved: {path}")
+
+    print('All final datasets saved successfully!')
+
+
+
+# %%
