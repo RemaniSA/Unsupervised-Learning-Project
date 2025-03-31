@@ -7,11 +7,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.cluster import KMeans
-from sklearn.discriminant_analysis import StandardScaler
+from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score, adjusted_rand_score
 import scipy.cluster.hierarchy as sch
-from scipy.cluster.hierarchy import fcluster
 
 # Set up plotting and saving configurations
 sns.set_style("whitegrid")
@@ -220,13 +219,6 @@ class PCAProcessor:
         cum_var = np.cumsum(self.explained_variance())
         return np.argmax(cum_var >= threshold) + 1
     
-    def get_aligned_original_data(self):
-        # Reload original dataset and align to filtered numeric data
-        original = pd.read_csv(self.file_path)
-        original.rename(columns={'Unnamed: 0': 'Ranking'}, inplace=True)
-        return original.loc[self.df.index].reset_index(drop=True)
-
-
 class PCAVisualiser:
     """
     PCAVisualiser class to display PCA results visually
@@ -405,7 +397,7 @@ class HierarchicalClusteringProcessor:
         # Assign clusters based on a threshold distance
         # e.g. 70% of max distance
         max_d = np.max(self.linkage_matrix[:, 2]) * threshold_ratio
-        self.labels = fcluster(self.linkage_matrix, max_d, criterion='distance')
+        self.labels = sch.fcluster(self.linkage_matrix, max_d, criterion='distance')
         print(f"\nNumber of hierarchical clusters: {len(np.unique(self.labels))}")
         return self.labels
 
@@ -576,6 +568,7 @@ if __name__ == "__main__":
         df.to_csv(path, index=False)
         print(f"Saved: {path}")
 
+    # Confirm completion
     print('All final datasets saved successfully!')
 
 
