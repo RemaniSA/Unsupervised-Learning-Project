@@ -23,7 +23,8 @@ print(df.head())
 df = df.rename(columns={"Unnamed: 0": "Ranking"})
 
 # Select numerical columns (excluding Year)
-numerical_df = df[["Ranking", "Runtime..Minutes.", "Rating", "Votes", "Revenue..Millions."]]
+numerical_df = df[["Ranking", "Runtime..Minutes.", "Rating",
+                    "Votes", "Revenue..Millions."]]
 
 # Compute correlation matrix
 correlation_matrix = numerical_df.corr()
@@ -67,7 +68,9 @@ explained_variance_ratio = pca.explained_variance_ratio_
 cumulative_variance = np.cumsum(explained_variance_ratio)
 
 # Component loadings
-loadings = pd.DataFrame(pca.components_.T, columns=[f'PC{i+1}' for i in range(len(features))], index=features)
+loadings = pd.DataFrame(pca.components_.T, 
+                        columns=[f'PC{i+1}' 
+                                 for i in range(len(features))], index=features)
 
 print("Explained Variance Ratio:")
 print(explained_variance_ratio)
@@ -205,7 +208,7 @@ for actor in top_actors:
     df[actor] = df['Actor_List'].apply(lambda x: int(actor in x))
 
 # Aggregate actor presence by cluster (k=5)
-actor_cluster_k5 = df.groupby("Cluster_k5")[[actor for actor in top_actors]].sum().astype(int).T
+actor_k5= df.groupby("Cluster_k5")[[actor for actor in top_actors]].sum().astype(int).T
 
 print("Top Actor Occurrences by k=5 Cluster:")
-print(actor_cluster_k5)
+print(actor_k5)
