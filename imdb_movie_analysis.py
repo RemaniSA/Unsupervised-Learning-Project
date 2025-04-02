@@ -1,4 +1,3 @@
-#TODO: Sort files by PCA and cluster rankings and save to csv
 #%%
 import os
 
