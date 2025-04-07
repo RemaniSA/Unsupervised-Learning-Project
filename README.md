@@ -28,9 +28,9 @@ Unsupervised-Learning-Project/
 ├── datasets/
 ├── images/
 ├── .gitignore
+├── README.md
 ├── Report.pdf
 ├── Task.pdf
-├── README.md
 ├── chatgpt4o_output.py
 ├── imdb_movie_analysis.py
 ├── requirements.txt
